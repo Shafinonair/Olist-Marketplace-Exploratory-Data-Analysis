@@ -1,0 +1,172 @@
+ #How was the e-commerce sales, freight? Did they grow up OVER time?
+
+SELECT
+  EXTRACT(YEAR
+  FROM
+    order_purchase_timestamp) AS order_purchase_year,
+  DATE_TRUNC(order_purchase_timestamp, MONTH) AS first_day_of_month,
+  COUNT(orders_data.order_id) AS total_orders,
+  ROUND(SUM(order_item.price)) AS Price,
+  ROUND(SUM(order_item.freight_value)) AS freight_value,
+  ROUND(SUM(order_item.price) / COUNT(orders_data.order_id)) AS price_per_order,
+  ROUND(SUM(order_item.freight_value) / COUNT(orders_data.order_id)) AS freight_per_order
+FROM
+  `tc-da-1.olist_db.olist_orders_dataset` AS orders_data
+JOIN
+  tc-da-1.olist_db.olist_order_items_dataset AS order_item
+ON
+  orders_data.order_id = order_item.order_id
+WHERE
+  order_purchase_timestamp between '2017-01-01' and '2018-09-01'
+GROUP BY
+  1,
+  2
+ORDER BY
+  first_day_of_month;
+
+
+#How the total sales are concentraded in brazilian states?
+
+
+With Order_payment AS (
+  SELECT * 
+
+  FROM
+    `tc-da-1.olist_db.olist_orders_dataset` AS orders_data
+  JOIN
+    tc-da-1.olist_db.olist_order_items_dataset AS order_item
+  ON
+    orders_data.order_id = order_item.order_id
+  Where 
+    order_purchase_timestamp between '2017-01-01' and '2018-09-01'
+)
+
+SELECT 
+    customer_data.customer_state,
+    Round(Sum(Order_payment.price)) As total_sales,
+    Round(AVG(Order_payment.price)) As mean_price_by_state, --mean of price by customer state
+    Round(Sum(Order_payment.freight_value)) As total_freight,
+    Round(AVG(Order_payment.freight_value)) As mean_freight_by_state --mean of freight by customer state
+
+FROM `tc-da-1.olist_db.olist_customesr_dataset` As customer_data
+
+JOIN Order_payment
+ON customer_data.customer_id = Order_payment.customer_id
+Group by 1
+
+
+#distribution of payment by payment method
+
+SELECT
+  payment_type,
+  COUNT(*) as total_transactions,
+  ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM `tc-da-1.olist_db.olist_order_payments_dataset`), 2) as percentage
+FROM
+  `tc-da-1.olist_db.olist_order_payments_dataset`
+GROUP BY
+  payment_type
+ORDER BY
+  total_transactions DESC;
+
+#distribution of payment by installment
+
+WITH installment_data AS (
+  SELECT
+    payment_installments,
+    COUNT(1) AS installment_count
+  FROM
+    `tc-da-1.olist_db.olist_order_payments_dataset`
+  GROUP BY
+    payment_installments
+),
+total_data AS (
+  SELECT
+    SUM(installment_count) AS total_count
+  FROM
+    installment_data
+)
+
+SELECT
+  id.payment_installments,
+  id.installment_count,
+  ROUND(id.installment_count * 100.0 / td.total_count, 2) AS percentage
+FROM
+  installment_data id
+CROSS JOIN
+  total_data td
+ORDER BY
+  id.payment_installments;
+
+#payment type timeseries data
+SELECT
+  DATE_TRUNC(DATE(o.order_purchase_timestamp), MONTH) AS first_day_of_month,
+  p.payment_type,
+  COUNT(*) as total_transactions,
+  ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM `tc-da-1.olist_db.olist_order_payments_dataset`), 2) as percentage
+FROM
+  `tc-da-1.olist_db.olist_order_payments_dataset` p
+JOIN
+  `tc-da-1.olist_db.olist_orders_dataset` o ON p.order_id = o.order_id
+Where 
+    o.order_purchase_timestamp between '2017-01-01' and '2018-09-01'
+GROUP BY
+  first_day_of_month,
+  p.payment_type
+
+ORDER BY
+  first_day_of_month,
+  total_transactions DESC;
+
+#customer state and payment
+
+SELECT
+  DATE_TRUNC(DATE(o.order_purchase_timestamp), MONTH) AS first_day_of_month,
+  c.customer_state,
+  p.payment_type,
+  COUNT(p.payment_type) AS total_payments,
+  ROUND(SUM(p.payment_value), 2) AS total_payment_value
+FROM
+  `tc-da-1.olist_db.olist_order_payments_dataset` p
+JOIN
+  `tc-da-1.olist_db.olist_orders_dataset` o ON p.order_id = o.order_id
+JOIN
+  `tc-da-1.olist_db.olist_customesr_dataset` c ON o.customer_id = c.customer_id
+
+Where 
+    o.order_purchase_timestamp between '2017-01-01' and '2018-09-01'
+GROUP BY
+  first_day_of_month,
+  c.customer_state,
+  p.payment_type
+ORDER BY
+  first_day_of_month,
+  c.customer_state,
+  total_payments DESC;
+
+#order status by Avg payment value
+
+SELECT 
+order_status,
+payment_type,
+Avg(payment_value) As Average_payment_value
+
+ FROM `tc-da-1.olist_db.olist_orders_dataset` AS  order_data
+ JOIN `olist_db.olist_order_payments_dataset`  AS  payment_data
+ on  order_data.order_id = payment_data.order_id
+
+ Where order_data.order_status = 'canceled'  
+ Group by order_status, payment_type;
+
+#avg installment by order status and payment type 
+
+SELECT 
+order_status,
+payment_type,
+Avg(payment_installments) As Average_payment_installment
+
+ FROM `tc-da-1.olist_db.olist_orders_dataset` AS  order_data
+ JOIN `olist_db.olist_order_payments_dataset`  AS  payment_data
+ on  order_data.order_id = payment_data.order_id
+  Where order_data.order_status = 'canceled'
+ Group by order_status, payment_type;
+
